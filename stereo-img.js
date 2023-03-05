@@ -50,6 +50,11 @@ class StereoImg extends HTMLElement {
     return this.getAttribute('src');
   }
   set src(val) {
+    if (this.getAttribute('src') === val) {
+      this.camera?.position.set(0, 0, 0.1);
+      return;
+    }
+
     if (val) {
       this.setAttribute('src', val);
     } else {
@@ -204,8 +209,11 @@ class StereoImg extends HTMLElement {
   }
 
   async parseImageAndInitialize3DScene() {
+    this.style.opacity = '0';
     await this.parse();
     await this.initialize3DScene();
+    this.camera?.position.set(0, 0, 0.1);
+    this.style.opacity = '1';
   }
 
   async init() {
@@ -239,7 +247,7 @@ class StereoImg extends HTMLElement {
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.20;
+    this.controls.dampingFactor = 0.125;
     this.controls.rotateSpeed = -0.25;
     this.controls.enableZoom = false;
     this.controls.addEventListener("change", () => {

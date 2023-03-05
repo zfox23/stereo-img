@@ -14,17 +14,16 @@ class VRButton {
 
             function onSessionEnded( /*event*/) {
                 currentSession.removeEventListener('end', onSessionEnded);
-                button.textContent = 'View in VR';
+                button.textContent = 'View in 3D VR';
                 currentSession = null;
-
             }
-            
+
             button.style.display = '';
             button.style.cursor = 'pointer';
-            button.style.left = 'calc(50% - 50px)';
-            button.style.width = '120px';
+            button.style.left = 'calc(50% - 70px)';
+            button.style.width = '140px';
 
-            button.textContent = 'View in VR';
+            button.textContent = 'View in 3D VR';
 
             button.onclick = () => {
                 if (currentSession === null) {
@@ -44,11 +43,7 @@ class VRButton {
         }
 
         const disableButton = () => {
-            button.style.display = '';
-
-            button.style.cursor = 'auto';
-            button.style.left = 'calc(50% - 75px)';
-            button.style.width = '150px';
+            button.style.display = 'none';
 
             button.onmouseenter = null;
             button.onmouseleave = null;
@@ -58,16 +53,17 @@ class VRButton {
 
         const showWebXRNotFound = () => {
             disableButton();
-            button.textContent = 'VR Device Not Found';
+            // button.textContent = 'VR Device Not Found';
         }
 
         const showVRNotAllowed = (exception) => {
             disableButton();
             console.warn('Exception when trying to call xr.isSessionSupported', exception);
-            button.textContent = 'VR Not Allowed';
+            // button.textContent = 'VR Not Allowed';
         }
 
         const stylizeElement = (element) => {
+            element.style.display = '';
             element.style.position = 'absolute';
             element.style.bottom = '12px';
             element.style.padding = '12px 6px';
@@ -113,12 +109,13 @@ class VRButton {
 
             stylizeElement(message);
 
-            message.style.left = 'calc(50% - 120px)';
-            message.style.width = '240px';
-            message.style.textDecoration = 'none';
-            message.style.opacity = "0.7";
-            message.style.background = '#a3a3a3';
-            message.style.border = '1px solid #a3a3a3';
+            message.style.display = 'none';
+            // message.style.left = 'calc(50% - 120px)';
+            // message.style.width = '240px';
+            // message.style.textDecoration = 'none';
+            // message.style.opacity = "0.7";
+            // message.style.background = '#a3a3a3';
+            // message.style.border = '1px solid #a3a3a3';
 
             return message;
         }
