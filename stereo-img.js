@@ -20,6 +20,29 @@ import exifr from 'exifr';
 import * as THREE from 'three';
 import { VRButton } from './vr-button.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+import BackwardSVG from './images/backward.svg';
+import ForwardSVG from './images/forward.svg';
+
+const svgLoader = new SVGLoader();
+
+const clamp = (val, min, max) => {
+  return Math.min(Math.max(val, min), max);
+}
+
+const linearScale = (factor, minInput, maxInput, minOutput, maxOutput, shouldClamp = true) => {
+  if (shouldClamp) {
+      factor = clamp(factor, minInput, maxInput);
+  }
+
+  return minOutput + (maxOutput - minOutput) *
+      (factor - minInput) / (maxInput - minInput);
+}
+
+const PREV_NEXT_TIMEOUT_MS = 1000;
+const RETICLE_INNER_OPACITY = 0.8;
+const RETICLE_OUTER_OPACITY = 0.9;
+const PREV_NEXT_BUTTON_TRANSPARENCY = 0.75;
 
 
 class StereoImg extends HTMLElement {
@@ -87,9 +110,88 @@ class StereoImg extends HTMLElement {
     }, 0);
   }
 
+  prevNextTest() {
+    if (!(this.scene && this.camera && this.raycaster && this.prevNextButtons)) {
+      return;
+    }
+
+    // update the picking ray with the camera and pointer position
+    this.raycaster.setFromCamera(new THREE.Vector2(), this.camera);
+
+    // calculate objects intersecting the picking ray
+    const intersects = this.raycaster.intersectObjects(this.prevNextButtons);
+
+    if (!intersects || intersects.length === 0 && this.prevNextTimer) {
+      clearTimeout(this.prevNextTimer);
+      this.prevNextTimer = null;
+      return;
+    }
+
+
+    for (let i = 0; i < intersects.length; i++) {
+      if (!(intersects[i].object && intersects[i].object.parent)) {
+        return;
+      }
+
+      if (intersects[i].object.parent.name === "prev") {
+        this.timerRingForPrev = true;
+        if (!this.prevNextTimer) {
+          this.prevNextTimerStartMS = performance.now();
+          this.prevNextTimer = setTimeout(() => {
+            clearTimeout(this.prevNextTimer);
+            this.prevNextTimer = null;
+            this.dispatchEvent(new Event("stereoImgGoToPrev"));
+          }, PREV_NEXT_TIMEOUT_MS)
+        }
+      } else if (intersects[i].object.parent.name === "next") {
+        this.timerRingForPrev = false;
+        if (!this.prevNextTimer) {
+          this.prevNextTimerStartMS = performance.now();
+          this.prevNextTimer = setTimeout(() => {
+            clearTimeout(this.prevNextTimer);
+            this.prevNextTimer = null;
+            this.dispatchEvent(new Event("stereoImgGoToNext"));
+          }, PREV_NEXT_TIMEOUT_MS)
+        }
+      }
+    }
+  }
+
+  updatePrevNextRing() {
+    if (this.timerRing) {
+      this.scene.remove(this.timerRing);
+      this.timerRing = null;
+    }
+    
+    if (this.prevNextTimer) {
+      const timeSinceStartedMS = performance.now() - this.prevNextTimerStartMS;
+
+      const timerRingMaterial = new THREE.MeshBasicMaterial({ color: 0xf4870e, side: THREE.DoubleSide, depthWrite: false });
+      const timerRingGeometry = new THREE.RingGeometry(1.0, 1.10, 128, 1, 0, linearScale(timeSinceStartedMS, 0, PREV_NEXT_TIMEOUT_MS, 0, this.timerRingForPrev ? Math.PI * 2 : -Math.PI * 2));
+      this.timerRing = new THREE.Mesh(
+        timerRingGeometry,
+        timerRingMaterial
+      );
+      this.timerRing.position.x = this.timerRingForPrev ? -9.8 : 9.8;
+      this.timerRing.position.z = 1.0;
+      this.timerRing.up.set(1, 0, 0);
+      this.timerRing.lookAt(this.camera.position);
+      // this.timerRing.rotation.x = Math.PI / 2;
+      // this.timerRing.rotation.y = Math.PI / 2;
+      this.scene.add(this.timerRing);
+
+      this.innerReticleMaterial.opacity = RETICLE_INNER_OPACITY;
+      this.outerReticleMaterial.opacity = RETICLE_OUTER_OPACITY;
+    } else {
+      this.innerReticleMaterial.opacity = 0.0;
+      this.outerReticleMaterial.opacity = 0.0;
+    }
+  }
+
   animate() {
     this.renderer.setAnimationLoop(() => {
       this.controls?.update();
+      this.updatePrevNextRing();
       this.renderer.render(this.scene, this.camera);
     });
   }
@@ -193,7 +295,9 @@ class StereoImg extends HTMLElement {
       });
       backImage.src = this.backImageSrc;
 
-      const geometry3 = new THREE.SphereGeometry(radius, 60, 40, -1 * this.stereoData.phiLength / 2, this.stereoData.phiLength, this.stereoData.thetaStart, this.stereoData.thetaLength);
+      // Removes seam between images
+      const EPSILON_PHI_LENGTH = 0.025;
+      const geometry3 = new THREE.SphereGeometry(radius, 60, 40, -1 * this.stereoData.phiLength / 2 - EPSILON_PHI_LENGTH, this.stereoData.phiLength + 2 * EPSILON_PHI_LENGTH, this.stereoData.thetaStart, this.stereoData.thetaLength);
       geometry3.scale(- 1, 1, 1);
 
       const material3 = new THREE.MeshBasicMaterial({ map: texture3 });
@@ -213,7 +317,117 @@ class StereoImg extends HTMLElement {
     await this.parse();
     await this.initialize3DScene();
     this.camera?.position.set(0, 0, 0.1);
+
+    if (this.camera) {
+      this.addReticle();
+      this.addPrevNextButtons();
+    }
+
     this.style.opacity = '1';
+  }
+
+  addReticle() {
+    const RETICLE_RADIUS_INNER = 0.05;
+    const RETICLE_RADIUS_OUTER = RETICLE_RADIUS_INNER * 1.3;
+    const RETICLE_NUM_SEGMENTS = 128;
+    this.outerReticleMaterial = new THREE.MeshBasicMaterial({ color: 0x0d0500, side: THREE.DoubleSide, depthWrite: false });
+    this.outerReticleMaterial.transparent = true;
+    this.outerReticleMaterial.opacity = 0.0;
+    this.outerReticle = new THREE.Mesh(
+      new THREE.RingGeometry(RETICLE_RADIUS_INNER, RETICLE_RADIUS_OUTER, RETICLE_NUM_SEGMENTS),
+      this.outerReticleMaterial
+    );
+    this.outerReticle.position.z = -9.8;
+    this.outerReticle.lookAt(this.camera.position);
+    this.camera.add(this.outerReticle);
+
+    this.innerReticleMaterial = new THREE.MeshBasicMaterial({ color: 0xf4870e, side: THREE.DoubleSide, depthWrite: false });
+    this.innerReticleMaterial.transparent = true;
+    this.innerReticleMaterial.opacity = 0.0;
+    this.innerReticle = new THREE.Mesh(
+      new THREE.CircleGeometry(RETICLE_RADIUS_INNER, RETICLE_NUM_SEGMENTS),
+      this.innerReticleMaterial
+    );
+    this.innerReticle.position.z = -9.8;
+    this.innerReticle.lookAt(this.camera.position);
+    this.camera.add(this.innerReticle);
+
+    this.scene.add(this.camera);
+  }
+
+  createPrevOrNextButton(isPrevButton) {
+    const buttonGroup = new THREE.Group();
+    buttonGroup.name = isPrevButton ? 'prev' : 'next';
+
+    this.buttonOuterMaterial = new THREE.MeshBasicMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide, depthWrite: false });
+    this.buttonOuterGeometry = new THREE.RingGeometry(1.0, 1.1, 128);
+    if (isPrevButton) {
+      this.prevButtonOuter = new THREE.Mesh(
+        this.buttonOuterGeometry,
+        this.buttonOuterMaterial
+      );
+      buttonGroup.add(this.prevButtonOuter);
+    } else {
+      this.nextButtonOuter = new THREE.Mesh(
+        this.buttonOuterGeometry,
+        this.buttonOuterMaterial
+      );
+      buttonGroup.add(this.nextButtonOuter);
+    }
+
+    this.buttonInnerMaterial = new THREE.MeshBasicMaterial({ color: 0xa65700, side: THREE.DoubleSide, depthWrite: false });
+    const buttonInner = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 128),
+      this.buttonInnerMaterial
+    );
+    buttonGroup.add(buttonInner);
+
+    svgLoader.load(
+      // resource URL
+      isPrevButton ? BackwardSVG : ForwardSVG,
+      // called when the resource is loaded
+      (data) => {
+        const paths = data.paths;
+        const group = new THREE.Group();
+
+        for (let i = 0; i < paths.length; i++) {
+          const path = paths[i];
+          const material = new THREE.MeshBasicMaterial({
+            color: 0xaaaaaa,
+            side: THREE.DoubleSide,
+            depthWrite: false
+          });
+          const shapes = SVGLoader.createShapes(path);
+          for (let j = 0; j < shapes.length; j++) {
+            const shape = shapes[j];
+            const geometry = new THREE.ShapeGeometry(shape);
+            geometry.scale(0.06, 0.06, 0.06);
+            geometry.translate(isPrevButton ? -0.66 : -0.58, -0.37, 0);
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.name = buttonGroup.name;
+            group.add(mesh);
+          }
+        }
+        buttonGroup.add(group);
+      },
+      (xhr) => { },
+      (error) => { console.log('Error while loading SVG:', error); }
+    );
+
+    buttonGroup.position.x = isPrevButton ? -9.8 : 9.8;
+    buttonGroup.position.z = 1.0;
+    buttonGroup.lookAt(this.camera.position);
+    // buttonGroup.layers.disable(0);
+    // buttonGroup.layers.enable(1);
+    // buttonGroup.layers.enable(2);
+
+    return buttonGroup;
+  }
+
+  addPrevNextButtons() {
+    this.prevNextButtons = [this.createPrevOrNextButton(true), this.createPrevOrNextButton(false)];
+    this.scene.add(this.prevNextButtons[0]);
+    this.scene.add(this.prevNextButtons[1]);
   }
 
   async init() {
@@ -235,7 +449,9 @@ class StereoImg extends HTMLElement {
 
     await this.parseImageAndInitialize3DScene();
 
-    this.renderer = new THREE.WebGLRenderer();
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true
+    });
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.xr.enabled = true;
     this.renderer.setSize(this.clientWidth, this.clientHeight);
@@ -245,13 +461,20 @@ class StereoImg extends HTMLElement {
     this.camera = new THREE.PerspectiveCamera(70, this.clientWidth / this.clientHeight, 1, 2000);
     this.camera.layers.enable(1);
 
+    this.raycaster = new THREE.Raycaster();
+    this.addReticle();
+    this.addPrevNextButtons();
+
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.125;
     this.controls.rotateSpeed = -0.25;
     this.controls.enableZoom = false;
     this.controls.addEventListener("change", () => {
-      if (this.renderer) this.renderer.render(this.scene, this.camera);
+      if (this.renderer) {
+        this.renderer.render(this.scene, this.camera);
+      }
+      this.prevNextTest();
     });
     this.camera.position.set(0, 0, 0.1);
 
@@ -277,5 +500,7 @@ class StereoImg extends HTMLElement {
 
 }
 
-window.customElements.define('stereo-img', StereoImg);
+if (window.customElements.get('stereo-img') === undefined) {
+  window.customElements.define('stereo-img', StereoImg);
+}
 
