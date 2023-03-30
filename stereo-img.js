@@ -191,6 +191,7 @@ class StereoImg extends HTMLElement {
   animate() {
     this.renderer.setAnimationLoop(() => {
       this.controls?.update();
+      this.prevNextTest();
       this.updatePrevNextRing();
       this.renderer.render(this.scene, this.camera);
     });
@@ -474,7 +475,6 @@ class StereoImg extends HTMLElement {
       if (this.renderer) {
         this.renderer.render(this.scene, this.camera);
       }
-      this.prevNextTest();
     });
     this.camera.position.set(0, 0, 0.1);
 
