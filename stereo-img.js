@@ -40,6 +40,7 @@ const linearScale = (factor, minInput, maxInput, minOutput, maxOutput, shouldCla
 }
 
 const PREV_NEXT_TIMEOUT_MS = 1000;
+const PREV_NEXT_BUTTONS_Z = 9.2;
 const RETICLE_INNER_OPACITY = 0.8;
 const RETICLE_OUTER_OPACITY = 0.9;
 const PREV_NEXT_BUTTON_TRANSPARENCY = 0.75;
@@ -116,12 +117,12 @@ class StereoImg extends HTMLElement {
     }
 
     // update the picking ray with the camera and pointer position
-    this.raycaster.setFromCamera(new THREE.Vector2(), this.camera);
+    this.raycaster.set(this.camera.position, this.camera.getWorldDirection(new THREE.Vector3()));
 
     // calculate objects intersecting the picking ray
     const intersects = this.raycaster.intersectObjects(this.prevNextButtons);
 
-    if (!intersects || intersects.length === 0 && this.prevNextTimer) {
+    if ((!intersects || intersects.length === 0) && this.prevNextTimer) {
       clearTimeout(this.prevNextTimer);
       this.prevNextTimer = null;
       return;
@@ -162,6 +163,12 @@ class StereoImg extends HTMLElement {
       this.scene.remove(this.timerRing);
       this.timerRing = null;
     }
+
+    if (this.prevNextButtons && this.prevNextButtons.length) {
+      this.prevNextButtons.forEach(button => {
+        button.lookAt(this.camera.position);
+      })
+    }
     
     if (this.prevNextTimer) {
       const timeSinceStartedMS = performance.now() - this.prevNextTimerStartMS;
@@ -172,7 +179,7 @@ class StereoImg extends HTMLElement {
         timerRingGeometry,
         timerRingMaterial
       );
-      this.timerRing.position.x = this.timerRingForPrev ? -9.8 : 9.8;
+      this.timerRing.position.x = this.timerRingForPrev ? -PREV_NEXT_BUTTONS_Z : PREV_NEXT_BUTTONS_Z;
       this.timerRing.position.z = 1.0;
       this.timerRing.up.set(1, 0, 0);
       this.timerRing.lookAt(this.camera.position);
@@ -180,11 +187,11 @@ class StereoImg extends HTMLElement {
       // this.timerRing.rotation.y = Math.PI / 2;
       this.scene.add(this.timerRing);
 
-      this.innerReticleMaterial.opacity = RETICLE_INNER_OPACITY;
-      this.outerReticleMaterial.opacity = RETICLE_OUTER_OPACITY;
+      // this.innerReticleMaterial.opacity = RETICLE_INNER_OPACITY;
+      // this.outerReticleMaterial.opacity = RETICLE_OUTER_OPACITY;
     } else {
-      this.innerReticleMaterial.opacity = 0.0;
-      this.outerReticleMaterial.opacity = 0.0;
+      // this.innerReticleMaterial.opacity = 0.0;
+      // this.outerReticleMaterial.opacity = 0.0;
     }
   }
 
@@ -320,7 +327,7 @@ class StereoImg extends HTMLElement {
     this.camera?.position.set(0, 0, 0.1);
 
     if (this.camera) {
-      this.addReticle();
+      // this.addReticle();
       this.addPrevNextButtons();
     }
 
@@ -338,7 +345,7 @@ class StereoImg extends HTMLElement {
       new THREE.RingGeometry(RETICLE_RADIUS_INNER, RETICLE_RADIUS_OUTER, RETICLE_NUM_SEGMENTS),
       this.outerReticleMaterial
     );
-    this.outerReticle.position.z = -9.8;
+    this.outerReticle.position.z = -PREV_NEXT_BUTTONS_Z;
     this.outerReticle.lookAt(this.camera.position);
     this.camera.add(this.outerReticle);
 
@@ -349,7 +356,7 @@ class StereoImg extends HTMLElement {
       new THREE.CircleGeometry(RETICLE_RADIUS_INNER, RETICLE_NUM_SEGMENTS),
       this.innerReticleMaterial
     );
-    this.innerReticle.position.z = -9.8;
+    this.innerReticle.position.z = -PREV_NEXT_BUTTONS_Z;
     this.innerReticle.lookAt(this.camera.position);
     this.camera.add(this.innerReticle);
 
@@ -415,7 +422,7 @@ class StereoImg extends HTMLElement {
       (error) => { console.log('Error while loading SVG:', error); }
     );
 
-    buttonGroup.position.x = isPrevButton ? -9.8 : 9.8;
+    buttonGroup.position.x = isPrevButton ? -PREV_NEXT_BUTTONS_Z : PREV_NEXT_BUTTONS_Z;
     buttonGroup.position.z = 1.0;
     buttonGroup.lookAt(this.camera.position);
     // buttonGroup.layers.disable(0);
@@ -463,7 +470,7 @@ class StereoImg extends HTMLElement {
     this.camera.layers.enable(1);
 
     this.raycaster = new THREE.Raycaster();
-    this.addReticle();
+    // this.addReticle();
     this.addPrevNextButtons();
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
